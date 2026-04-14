@@ -1,40 +1,47 @@
 #!/bin/bash
-# Ubuntu 虚拟机时间同步初始化脚本 (基于 Chrony)
-# 适用前提: 已有软路由提供网络环境，直接使用系统默认 NTP 池
+# Ubuntu VM Time Synchronization Setup Script (Chrony-based)
+# Prerequisite: Network is already provided by the upstream router;
+# this script uses the default NTP pool shipped with chrony.
 
-# 1. 确保以 root 权限运行
+# 1. Ensure the script is run as root
 if [ "$EUID" -ne 0 ]; then
-  echo "❌ 请使用 root 权限执行此脚本 (可以加 sudo)"
+  echo "❌ Please run this script as root (use sudo)."
   exit 1
 fi
 
-echo "========== 开始配置时间与时区 =========="
+echo "========== Starting time & timezone configuration =========="
 
-# 2. 设置时区为上海
-echo "[1/5] 正在设置时区为 Asia/Shanghai..."
+# 2. Set the timezone to Asia/Shanghai
+echo "[1/6] Setting timezone to Asia/Shanghai..."
 timedatectl set-timezone Asia/Shanghai
 
-# 3. 静默更新软件源并安装 Chrony
-echo "[2/5] 检查并安装 chrony 服务..."
+# 3. Disable systemd-timesyncd to prevent conflicts with chrony
+echo "[2/6] Disabling systemd-timesyncd to avoid conflicts..."
+systemctl disable --now systemd-timesyncd 2>/dev/null || true
+
+# 4. Quietly refresh package lists and install chrony
+echo "[3/6] Installing the chrony service..."
 apt-get update -qq
 apt-get install -y chrony > /dev/null 2>&1
 
-# 4. 启用并启动服务 (注意 Ubuntu 下叫 chrony)
-echo "[3/5] 正在启动 chrony 并配置开机自启..."
+# 5. Enable chrony and start it at boot
+echo "[4/6] Enabling chrony and starting it on boot..."
 systemctl enable --now chrony > /dev/null 2>&1
 
-# 5. 强制立即步进同步时间 (无视时间差)
-echo "[4/5] 正在强制进行初始时间同步..."
+# 6. Force an immediate step-sync (ignores the usual drift threshold)
+echo "[5/6] Forcing an initial time step-sync..."
+sleep 2  # Give chrony a moment to initialize before stepping
 chronyc makestep > /dev/null 2>&1
 
-# 6. 将正确的时间写入虚拟机主板的硬件时钟
-echo "[5/5] 将当前时间写入硬件时钟 (hwclock)..."
+# 7. Write the corrected system time back to the hardware clock (RTC)
+echo "[6/6] Writing current system time to the hardware clock (hwclock)..."
 hwclock --systohc
 
-echo "========== ✅ 配置完成 =========="
+echo "========== ✅ Configuration complete =========="
 
-# 打印最终结果供直观检查
-echo -e "\n⏱️ 当前系统时间:"
+# Print final state for a quick sanity check
+echo -e "\n⏱️  Current system time:"
 date
-echo -e "\n📡 Chrony 同步状态:"
+
+echo -e "\n📡 Chrony sync status:"
 chronyc tracking | grep -E "Reference ID|Leap status"
